@@ -1,19 +1,28 @@
 import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
-import { RocketLaunch } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
+import { Public } from '@mui/icons-material';
+import ReportForm from './ReportForm.jsx';
 
 export default function Navbar() {
   return (
-    <AppBar position="static" color="transparent" elevation={0} sx={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+    <AppBar position="static" sx={{ bgcolor: '#0a192f', borderBottom: '1px solid #112240' }}>
       <Toolbar>
-        <RocketLaunch sx={{ mr: 2, color: 'primary.main' }} />
-        <Typography variant="h6" component={Link} to="/" sx={{ flexGrow: 1, textDecoration: 'none', color: 'white', fontWeight: 'bold' }}>
-          OrbitLens
+        <Public sx={{ mr: 2, color: '#00e6ff' }} />
+        <Typography 
+          variant="h6" 
+          component={Link} 
+          to="/" 
+          sx={{ flexGrow: 1, textDecoration: 'none', color: 'white', fontWeight: 'bold', letterSpacing: 1 }}
+        >
+          ORBITLENS
         </Typography>
         
-        <Box>
-          <Button color="inherit" component={Link} to="/space">Space Traffic</Button>
-          <Button color="inherit" component={Link} to="/climate">Earth Sentinel</Button>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Button component={Link} to="/space" color="inherit">Space Traffic</Button>
+          <Button component={Link} to="/climate" color="inherit">Earth Sentinel</Button>
+          
+          {/* Global Email CSV Generator */}
+          <ReportForm isNavbar={true} /> 
         </Box>
       </Toolbar>
     </AppBar>

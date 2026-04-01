@@ -1,78 +1,98 @@
-import { useEffect, useRef } from 'react';
-import { Box, Typography, Paper, Grid, Chip, Button } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
+import { Box, Typography, Paper, Grid, Chip, Button, CircularProgress } from '@mui/material';
 import { Public, Home as HomeIcon } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import L from 'leaflet';
+import axios from 'axios';
+import ReportForm from '../components/ReportForm.jsx';
 import 'leaflet/dist/leaflet.css';
 
-// MOCK DATA
-const mockEvents = [
-  { title: "Wildfire - California Region", category: "Wildfires", lat: 36.7782, lng: -119.4179 },
-  { title: "Wildfire - Amazon Basin", category: "Wildfires", lat: -3.4653, lng: -62.2159 },
-  { title: "Severe Storm - North Atlantic", category: "Severe Storms", lat: 45.0, lng: -40.0 },
-  { title: "Iceberg A-76A Breakoff", category: "Sea Ice", lat: -60.0, lng: -55.0 },
-  { title: "Volcano Eruption - Mt. Etna", category: "Volcanoes", lat: 37.7510, lng: 14.9934 },
-  { title: "Tropical Cyclone - Indian Ocean", category: "Severe Storms", lat: -15.0, lng: 75.0 }
-];
-
-const getCustomIcon = (category) => {
-  let symbol = '⚠️'; 
-  if (category === 'Wildfires') symbol = '🔥';
-  if (category === 'Severe Storms') symbol = '🌪️';
-  if (category === 'Volcanoes') symbol = '🌋';
-  if (category === 'Sea Ice') symbol = '❄️';
-
-  return L.divIcon({
-    html: `<div style="font-size: 28px; filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.5));">${symbol}</div>`,
-    className: 'custom-icon-wrapper',
-    iconSize: [30, 30],
-    iconAnchor: [15, 15],
-    popupAnchor: [0, -15]
-  });
+// Performance-friendly color mapping
+const getColor = (category) => {
+  if (category.includes('Wildfires')) return '#ff3333'; // Red
+  if (category.includes('Storms')) return '#33ccff';    // Blue
+  if (category.includes('Volcanoes')) return '#ff9900'; // Orange
+  if (category.includes('Ice')) return '#ffffff';       // White
+  return '#cc33ff'; // Purple for others
 };
 
 export default function EcoWatch() {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  // Fetch full live NASA dataset
   useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/climate-events');
+        setEvents(response.data);
+      } catch (error) {
+        console.error("Failed to fetch climate events", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchEvents();
+  }, []);
+
+  // Initialize Map & Render Data
+  useEffect(() => {
+    // 1. Initialize Map exactly once
     if (mapContainerRef.current && !mapInstanceRef.current) {
-      mapInstanceRef.current = L.map(mapContainerRef.current).setView([20, 0], 3);
+      mapInstanceRef.current = L.map(mapContainerRef.current, {
+        preferCanvas: true // Crucial for rendering hundreds of data points without lag
+      }).setView([20, 0], 3);
 
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
+        attribution: '&copy; OpenStreetMap'
       }).addTo(mapInstanceRef.current);
+    }
 
-      mockEvents.forEach(event => {
-        const marker = L.marker([event.lat, event.lng], { icon: getCustomIcon(event.category) })
-          .addTo(mapInstanceRef.current);
-        
-        marker.bindPopup(`
+    // 2. Plot the data whenever 'events' state changes
+    if (mapInstanceRef.current && events.length > 0) {
+      
+      // Clear out old circles before drawing new ones (prevents ghost duplicates)
+      mapInstanceRef.current.eachLayer((layer) => {
+        if (layer instanceof L.Circle) {
+          mapInstanceRef.current.removeLayer(layer);
+        }
+      });
+
+      // 3. Draw scalable circles (Radius in meters)
+      events.forEach(event => {
+        L.circle([event.lat, event.lng], {
+          radius: 5000, // 1km radius - scales perfectly when zooming!
+          fillColor: getColor(event.category),
+          color: '#ac2525',
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 0.6
+        })
+        .addTo(mapInstanceRef.current)
+        .bindPopup(`
           <div style="font-family: Arial, sans-serif; color: #333;">
             <strong style="font-size: 14px;">${event.title}</strong><br/>
-            <span style="color: #d32f2f; font-weight: bold; font-size: 12px;">Alert: ${event.category}</span>
+            <span style="color: #d32f2f; font-weight: bold; font-size: 12px;">Alert: ${event.category}</span><br/>
+            <span style="font-size: 11px; color: #666;">Lat: ${event.lat.toFixed(2)}, Lng: ${event.lng.toFixed(2)}</span>
           </div>
         `);
       });
     }
 
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, []);
+    // Note: We deliberately do NOT destroy the map instance on component unmount
+    // here to prevent React StrictMode from crashing the Leaflet DOM node.
+  }, [events]);
 
   return (
     <Box display="flex" flexDirection="column" height="calc(100vh - 64px)">
       
-      {/* Enhanced Header */}
+      {/* HUD Header */}
       <Paper elevation={4} sx={{ p: 3, borderRadius: 0, bgcolor: 'background.paper', zIndex: 1000 }}>
         <Grid container alignItems="flex-start" justifyContent="space-between">
           <Grid item xs={12} md={8}>
             <Box display="flex" alignItems="center" mb={1}>
-              {/* 🟢 NEW: Home Button */}
               <Button 
                 component={Link} 
                 to="/" 
@@ -86,26 +106,41 @@ export default function EcoWatch() {
               </Typography>
             </Box>
             <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 800 }}>
-              Monitoring Earth's climate health. This dashboard tracks real-time natural disasters and anomalies detected by Earth-observing satellites.
+              Monitoring Earth's climate health. Tracking real-time natural disasters and anomalies detected by NASA Earth-observing satellites.
             </Typography>
           </Grid>
           
-          {/* Legend Area */}
+          {/* Legend area matching the new Canvas colors */}
           <Grid item xs={12} md={4} display="flex" gap={1} flexWrap="wrap" justifyContent={{ xs: 'flex-start', md: 'flex-end' }} mt={{ xs: 2, md: 0 }}>
-            <Chip label="🔥 Wildfires" variant="outlined" />
-            <Chip label="🌪️ Storms" variant="outlined" />
-            <Chip label="🌋 Volcanoes" variant="outlined" />
-            <Chip label="❄️ Sea Ice" variant="outlined" />
+            <Chip label="🔴 Wildfires" variant="outlined" />
+            <Chip label="🔵 Storms" variant="outlined" />
+            <Chip label="🟠 Volcanoes" variant="outlined" />
+            <Chip label="⚪ Sea Ice" variant="outlined" />
           </Grid>
         </Grid>
       </Paper>
 
-      {/* Map Wrapper */}
+      {/* Map Container */}
       <Box sx={{ flexGrow: 1, position: 'relative' }}>
+        
+        {/* Loading Spinner */}
+        {loading && (
+            <Box position="absolute" top="50%" left="50%" sx={{ transform: 'translate(-50%, -50%)', zIndex: 2000 }}>
+                <CircularProgress color="success" />
+            </Box>
+        )}
+        
+        {/* Actual Leaflet DOM Node */}
         <div 
-          ref={mapContainerRef} 
-          style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }} 
+            ref={mapContainerRef} 
+            style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0 }} 
         />
+        
+        {/* Integrated Report Form in the bottom right corner */}
+        <Box sx={{ position: 'absolute', bottom: 30, right: 30, zIndex: 1000 }}>
+            <ReportForm />
+        </Box>
+        
       </Box>
     </Box>
   );
